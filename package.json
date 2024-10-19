@@ -4,8 +4,7 @@
   "description": "a webgpu rasterizer",
   "main": "index.js",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build"
+    "dev": "vite"
   },
   "author": "Andrew Borders",
   "license": "ISC",
