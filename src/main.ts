@@ -4,7 +4,7 @@ import * as cube from './models/cube';
 import { mat4, quat, vec3, vec4 } from 'gl-matrix';
 
 const MODELS = 8;
-const LIGHTS = 2;
+const LIGHTS = 3;
 const canvas = document.querySelector('canvas');
 if (!canvas)
   throw new Error('No Canvas');
@@ -164,7 +164,7 @@ const lCntBuffer = device.createBuffer({
 });
 const lPosBuffer = device.createBuffer({
   label: 'Light position buffer',
-  size: 4 * 4 * LIGHTS,
+  size: 3 * 4 * LIGHTS,
   usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
 });
 const lColBuffer = device.createBuffer({
@@ -226,7 +226,7 @@ const mBufferLoc = new Float32Array(MODELS * 4 * 4);
 const colBufferLoc = new Float32Array(MODELS * 4);
 const vpBufferLoc = new Float32Array(4 * 4);
 const cPosBufferLoc = new Float32Array(4);
-const lPosBufferLoc = new Float32Array(LIGHTS * 4);
+const lPosBufferLoc = new Float32Array(LIGHTS * 3);
 const lColBufferLoc = new Float32Array(LIGHTS * 4);
 
 function frame() {
@@ -235,8 +235,7 @@ function frame() {
   for (let i = 0; i < MODELS; ++i) {
     const x=i%2, y=Math.floor((i%4)/2), z=Math.floor(i/4);
     const tl = vec3.fromValues(-2+x*4, -2+y*4, -2+z*4);
-    // const rot = quat.fromEuler(quat.create(), 0, 0, (y?1:-1)*now*90*120/60);
-    const rot = quat.fromEuler(quat.create(), 0, 0, 0);
+    const rot = quat.fromEuler(quat.create(), 0, 0, (y?1:-1)*now*360/2);
     const scl = vec3.fromValues(1, 1, 1);
     const mMatrix = mat4.fromRotationTranslationScale(mat4.create(), rot, tl, scl);
     const col = vec4.fromValues(x, y, z, 1);
@@ -247,8 +246,8 @@ function frame() {
   device.queue.writeBuffer(colBuffer, 0, colBufferLoc);
   // set view / projection matrix
   {
-    // const pos = vec3.fromValues(Math.sin(now)*10, 0, Math.cos(now)*10);
-    const pos = vec3.fromValues(0, 0, 10);
+    const pos = vec3.fromValues(Math.sin(now/4)*10, 0, Math.cos(now/4)*10);
+    // const pos = vec3.fromValues(0, 0, 10);
     const lookAt = vec3.fromValues(0, 0, 0);
     const up = vec3.fromValues(0, 1, 0);
     const view = mat4.lookAt(mat4.create(), pos, lookAt, up);
@@ -261,11 +260,17 @@ function frame() {
   device.queue.writeBuffer(vpBuffer, 0, vpBufferLoc);
   device.queue.writeBuffer(cPosBuffer, 0, cPosBufferLoc);
   // set lights
-  for(let i = 0; i < LIGHTS; ++i) {
-    const pos = vec4.fromValues(Math.sin((i?1:-1)*now)*10, 0, Math.cos(now)*10, 1);
-    const col = vec4.fromValues(i, 1-i, 0, 5);
-    lPosBufferLoc.set(pos, i*4);
-    lColBufferLoc.set(col, i*4);
+  {
+    lPosBufferLoc.set([
+      0, Math.cos(now)*10, Math.sin(now)*10,
+      Math.sin(now)*10, 0, Math.cos(now)*10,
+      Math.cos(now)*10, Math.sin(now)*10, 0
+    ]);
+    lColBufferLoc.set([
+      1, 0, 0, 10,
+      0, 1, 0, 10,
+      0, 0, 1, 10
+    ]);
   }
   device.queue.writeBuffer(lPosBuffer, 0, lPosBufferLoc);
   device.queue.writeBuffer(lColBuffer, 0, lColBufferLoc);
