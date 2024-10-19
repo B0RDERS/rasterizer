@@ -1,96 +1,221 @@
-import triangleVert from './shaders/triangle.vert.wgsl?raw'
-import redFrag from './shaders/red.frag.wgsl?raw'
+import vertShader from './shaders/vert.wgsl?raw';
+import fragShader from './shaders/frag.wgsl?raw';
+import * as cube from './util/cube';
+import { getMMatrix } from './util/math';
 
 // initialize webgpu device & config canvas context
 async function initWebGPU(canvas: HTMLCanvasElement) {
-    if(!navigator.gpu)
-        throw new Error('Not Support WebGPU')
-    const adapter = await navigator.gpu.requestAdapter({
-        powerPreference: 'high-performance'
-        // powerPreference: 'low-power'
-    })
-    if (!adapter)
-        throw new Error('No Adapter Found')
-    const device = await adapter.requestDevice()
-    const context = canvas.getContext('webgpu') as GPUCanvasContext
-    const format = navigator.gpu.getPreferredCanvasFormat()
-    const devicePixelRatio = window.devicePixelRatio || 1
-    canvas.width = canvas.clientWidth * devicePixelRatio
-    canvas.height = canvas.clientHeight * devicePixelRatio
-    const size = {width: canvas.width, height: canvas.height}
-    context.configure({
-        // json specific format when key and value are the same
-        device, format,
-        // prevent chrome warning
-        alphaMode: 'opaque'
-    })
-    return {device, context, format, size}
-}
-// create a simple pipiline
-async function initPipeline(device: GPUDevice, format: GPUTextureFormat): Promise<GPURenderPipeline> {
-    const descriptor: GPURenderPipelineDescriptor = {
-        layout: 'auto',
-        vertex: {
-            module: device.createShaderModule({
-                code: triangleVert
-            }),
-            entryPoint: 'main'
-        },
-        primitive: {
-            topology: 'triangle-list' // try point-list, line-list, line-strip, triangle-strip?
-        },
-        fragment: {
-            module: device.createShaderModule({
-                code: redFrag
-            }),
-            entryPoint: 'main',
-            targets: [
-                {
-                    format: format
-                }
-            ]
-        }
-    }
-    return await device.createRenderPipelineAsync(descriptor)
-}
-// create & submit device commands
-function draw(device: GPUDevice, context: GPUCanvasContext, pipeline: GPURenderPipeline) {
-    const commandEncoder = device.createCommandEncoder()
-    const view = context.getCurrentTexture().createView()
-    const renderPassDescriptor: GPURenderPassDescriptor = {
-        colorAttachments: [
-            {
-                view: view,
-                clearValue: { r: 0, g: 0, b: 0, a: 1.0 },
-                loadOp: 'clear', // clear/load
-                storeOp: 'store' // store/discard
-            }
-        ]
-    }
-    const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor)
-    passEncoder.setPipeline(pipeline)
-    // 3 vertex form a triangle
-    passEncoder.draw(3)
-    passEncoder.end()
-    // webgpu run in a separate process, all the commands will be executed after submit
-    device.queue.submit([commandEncoder.finish()])
+  if (!navigator.gpu)
+    throw new Error('Not Support WebGPU');
+  const adapter = await navigator.gpu.requestAdapter();
+  if (!adapter)
+    throw new Error('No Adapter Found');
+  const device = await adapter.requestDevice();
+  const context = canvas.getContext('webgpu') as GPUCanvasContext;
+  const format = navigator.gpu.getPreferredCanvasFormat();
+  const devicePixelRatio = window.devicePixelRatio || 1;
+  canvas.width = canvas.clientWidth * devicePixelRatio;
+  canvas.height = canvas.clientHeight * devicePixelRatio;
+  const size = { width: canvas.width, height: canvas.height };
+  context.configure({
+    device, format,
+    // prevent chrome warning after v102
+    alphaMode: 'opaque'
+  });
+  return { device, context, format, size };
 }
 
-async function run(){
-    const canvas = document.querySelector('canvas')
-    if (!canvas)
-        throw new Error('No Canvas')
-    const {device, context, format} = await initWebGPU(canvas)
-    const pipeline = await initPipeline(device, format)
-    // start draw
-    draw(device, context, pipeline)
-    
-    // re-configure context on resize
-    window.addEventListener('resize', ()=>{
-        canvas.width = canvas.clientWidth * devicePixelRatio
-        canvas.height = canvas.clientHeight * devicePixelRatio
-        // don't need to recall context.configure() after v104
-        draw(device, context, pipeline)
-    })
+// create pipiline & buffers
+async function initPipeline(device: GPUDevice, format: GPUTextureFormat, size: { width: number, height: number; }) {
+  const pipeline = await device.createRenderPipelineAsync({
+    label: 'Basic Pipline',
+    layout: 'auto',
+    vertex: {
+      module: device.createShaderModule({
+        code: vertShader,
+      }),
+      entryPoint: 'main',
+      buffers: [{
+        arrayStride: 6 * 4, // 3 position
+        attributes: [
+          {
+            // position
+            shaderLocation: 0,
+            offset: 0,
+            format: 'float32x3',
+          },
+          {
+            // normal
+            shaderLocation: 1,
+            offset: 3 * 4,
+            format: 'float32x3',
+          }
+        ]
+      }]
+    },
+    fragment: {
+      module: device.createShaderModule({
+        code: fragShader,
+      }),
+      entryPoint: 'main',
+      targets: [
+        {
+          format: format
+        }
+      ]
+    },
+    primitive: {
+      topology: 'triangle-list',
+      // Culling backfaces pointing away from the camera
+      cullMode: 'back'
+    },
+    // Enable depth testing since we have z-level positions
+    // Fragment closest to the camera is rendered in front
+    depthStencil: {
+      depthWriteEnabled: true,
+      depthCompare: 'less',
+      format: 'depth24plus',
+    }
+  } as GPURenderPipelineDescriptor);
+  // create depthTexture for renderPass
+  const depthTexture = device.createTexture({
+    size, format: 'depth24plus',
+    usage: GPUTextureUsage.RENDER_ATTACHMENT,
+  });
+  const depthView = depthTexture.createView();
+
+  // create vertex buffer
+  const vertexBuffer = device.createBuffer({
+    label: 'GPUBuffer store vertex',
+    size: cube.vertex.byteLength,
+    usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+  });
+  device.queue.writeBuffer(vertexBuffer, 0, cube.vertex);
+  // create a 4x4xNUM STORAGE buffer to store matrix
+  const mBuffer = device.createBuffer({
+    label: 'GPUBuffer store n*4x4 matrix',
+    size: 4 * 4 * 4 * NUM, // 4 x 4 x float32 x NUM
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+  });
+  // create a uniform group for Matrix
+  const group = device.createBindGroup({
+    label: 'Uniform Group with matrix',
+    layout: pipeline.getBindGroupLayout(0),
+    entries: [
+      {
+        binding: 0,
+        resource: {
+          buffer: mBuffer
+        }
+      }
+    ]
+  });
+  // return all vars
+  return { pipeline, vertexBuffer, mBuffer, group, depthTexture, depthView };
 }
-run()
+
+// create & submit device commands
+function draw(
+  device: GPUDevice,
+  context: GPUCanvasContext,
+  pipelineObj: {
+    pipeline: GPURenderPipeline,
+    vertexBuffer: GPUBuffer,
+    mBuffer: GPUBuffer,
+    group: GPUBindGroup,
+    depthView: GPUTextureView;
+  }
+) {
+  const commandEncoder = device.createCommandEncoder();
+  const renderPassDescriptor: GPURenderPassDescriptor = {
+    colorAttachments: [
+      {
+        view: context.getCurrentTexture().createView(),
+        clearValue: { r: 0, g: 0, b: 0, a: 1.0 },
+        loadOp: 'clear',
+        storeOp: 'store'
+      }
+    ],
+    depthStencilAttachment: {
+      view: pipelineObj.depthView,
+      depthClearValue: 1.0,
+      depthLoadOp: 'clear',
+      depthStoreOp: 'store',
+    }
+  };
+  const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
+  passEncoder.setPipeline(pipelineObj.pipeline);
+  // set vertex
+  passEncoder.setVertexBuffer(0, pipelineObj.vertexBuffer);
+  {
+    // draw NUM cubes in one draw()
+    passEncoder.setBindGroup(0, pipelineObj.group);
+    passEncoder.draw(cube.vertexCount, NUM);
+  }
+  passEncoder.end();
+  // webgpu run in a separate process, all the commands will be executed after submit
+  device.queue.submit([commandEncoder.finish()]);
+}
+
+// total objects
+const NUM = 8;
+async function run() {
+  const canvas = document.querySelector('canvas');
+  if (!canvas)
+    throw new Error('No Canvas');
+
+  const { device, context, format, size } = await initWebGPU(canvas);
+  const pipelineObj = await initPipeline(device, format, size);
+  // create objects
+  let aspect = size.width / size.height;
+  const scene: any[] = [];
+  const mBuffer = new Float32Array(NUM * 4 * 4);
+  for (let i = 0; i < NUM; i++) {
+    // craete simple object
+    const position = { x: -2+(i%2)*4, y: -2+Math.floor((i%4)/2)*4, z: -12+Math.floor(i/4)*4 };
+    const rotation = { x: 0, y: 0, z: 0 };
+    const scale = { x: 1, y: 1, z: 1 };
+    scene.push({ position, rotation, scale });
+  }
+  // start loop
+  function frame() {
+    // update rotation for each object
+    for (let i = 0; i < scene.length; i++) {
+      const obj = scene[i];
+      const now = Date.now() / 1000;
+      obj.rotation.x = Math.sin(now + i);
+      obj.rotation.y = Math.cos(now + i);
+      const mMatrix = getMMatrix(aspect, obj.position, obj.rotation, obj.scale);
+      // update buffer based on offset
+      // device.queue.writeBuffer(
+      //     pipelineObj.mBuffer,
+      //     i * 4 * 4 * 4, // offset for each object, no need to 256-byte aligned
+      //     mMatrix
+      // )
+      // or save to mBuffer first
+      mBuffer.set(mMatrix, i * 4 * 4);
+    }
+    // the better way is update buffer in one write after loop
+    device.queue.writeBuffer(pipelineObj.mBuffer, 0, mBuffer);
+    draw(device, context, pipelineObj);
+    requestAnimationFrame(frame);
+  }
+  frame();
+
+  // re-configure context on resize
+  window.addEventListener('resize', () => {
+    size.width = canvas.width = canvas.clientWidth * devicePixelRatio;
+    size.height = canvas.height = canvas.clientHeight * devicePixelRatio;
+    // don't need to recall context.configure() after v104
+    // re-create depth texture
+    pipelineObj.depthTexture.destroy();
+    pipelineObj.depthTexture = device.createTexture({
+      size, format: 'depth24plus',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+    pipelineObj.depthView = pipelineObj.depthTexture.createView();
+    // update aspect
+    aspect = size.width / size.height;
+  });
+}
+run();
