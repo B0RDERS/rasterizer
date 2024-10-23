@@ -16,14 +16,14 @@ fn main(
     @location(1) normal : vec3f
 ) -> VertexOutput {
     let mvp = vpMat * mMat[index];
-    let pos = vec4f(position, 1.0);
+    let pos = vec4f(position, 1.);
 
     var output : VertexOutput;
     output.Position = mvp * pos;
     output.fragPosition = (mMat[index] * pos).xyz;
     // it should use transpose(inverse(modelview)) if consider non-uniform scale
     // hint: inverse() is not available in wgsl, better do in JS or CS
-    output.fragNormal =  (mMat[index] * vec4f(normal, 0.0)).xyz;
+    output.fragNormal =  (mMat[index] * vec4f(normal, 0.)).xyz;
     output.fragColor = colors[index];
     return output;
 }

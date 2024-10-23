@@ -235,7 +235,7 @@ function frame() {
   for (let i = 0; i < MODELS; ++i) {
     const x=i%2, y=Math.floor((i%4)/2), z=Math.floor(i/4);
     const tl = vec3.fromValues(-2+x*4, -2+y*4, -2+z*4);
-    const rot = quat.fromEuler(quat.create(), 0, 0, (y?1:-1)*now*360/2);
+    const rot = quat.fromEuler(quat.create(), 0, 0, (y?1:-1)*now*180);
     const scl = vec3.fromValues(1, 1, 1);
     const mMatrix = mat4.fromRotationTranslationScale(mat4.create(), rot, tl, scl);
     const col = vec4.fromValues(x, y, z, 1);
@@ -251,7 +251,7 @@ function frame() {
     const lookAt = vec3.fromValues(0, 0, 0);
     const up = vec3.fromValues(0, 1, 0);
     const view = mat4.lookAt(mat4.create(), pos, lookAt, up);
-    const proj = mat4.perspective(mat4.create(), Math.PI/2, aspect, .001, 100000);
+    const proj = mat4.perspective(mat4.create(), Math.PI/2, aspect, .1, 100);
     const vpMatrix = mat4.mul(mat4.create(), proj, view);
     vpBufferLoc.set(vpMatrix);
     cPosBufferLoc.set(pos);
@@ -300,7 +300,7 @@ function frame() {
   passEncoder.setVertexBuffer(0, vertexBuffer);
   passEncoder.draw(cube.vertexCount, MODELS);
   passEncoder.end();
-  // webgpu run in a separate process, all the commands will be executed after submit
+  
   device.queue.submit([commandEncoder.finish()]);
   requestAnimationFrame(frame);
 }
