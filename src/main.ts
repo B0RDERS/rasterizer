@@ -6,13 +6,11 @@ import { mat4, quat, vec3, vec4 } from 'gl-matrix';
 const MODELS = 8;
 const LIGHTS = 3;
 const canvas = document.querySelector('canvas');
-if (!canvas)
-  throw new Error('No Canvas');
 if (!navigator.gpu)
-  throw new Error('Not Support WebGPU');
+  document.body.innerHTML = `
+    <p>WebGPU not enabled on your device/browser. For more details, please see 
+    <a href="https://github.com/gpuweb/gpuweb/wiki/Implementation-Status">WebGPU Implementation Status</a></p>`;
 const adapter = await navigator.gpu.requestAdapter();
-if (!adapter)
-  throw new Error('No Adapter Found');
 const device = await adapter.requestDevice();
 const context = canvas.getContext('webgpu') as GPUCanvasContext;
 const format = navigator.gpu.getPreferredCanvasFormat();
