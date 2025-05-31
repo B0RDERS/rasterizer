@@ -1,6 +1,6 @@
-import vertShader from './shaders/vert.wgsl?raw';
-import fragShader from './shaders/frag.wgsl?raw';
-import * as cube from './models/cube';
+import vertShader from './shaders/vs.wgsl?raw';
+import fragShader from './shaders/fs.wgsl?raw';
+import * as cube from './cube';
 import { mat4, quat, vec3, vec4 } from 'gl-matrix';
 
 const MODELS = 8;
@@ -20,7 +20,6 @@ canvas.height = canvas.clientHeight * devicePixelRatio;
 const size = { width: canvas.width, height: canvas.height };
 context.configure({
   device, format,
-  // prevent chrome warning after v102
   alphaMode: 'opaque'
 });
 

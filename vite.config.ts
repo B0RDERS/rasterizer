@@ -1,9 +1,10 @@
-export default {
-    server: {
-        port: 3000,
-        host: 'localhost',
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  base: '',
+  esbuild: {
+    supported: {
+      'top-level-await': true,
     },
-    build: {
-        target: "ESNext"
-    }
-};
+  }
+});
